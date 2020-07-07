@@ -9,225 +9,195 @@ import numpy as np
 
 sys.setrecursionlimit(10000)
 
-def multiply(a,b):
-    if isinstance(a, np.ndarray) and isinstance(b, np.ndarray):
-        return a.dot(b)
-    else:
-        return a * b
 
 class Interpreter(object):
     def __init__(self):
         self.memory_stack = MemoryStack()
 
-        self.operations = dict()
-        self.operations['+'] = operator.add
-        self.operations['-'] = operator.sub
-        self.operations['*'] = multiply 
-        self.operations['/'] = operator.truediv
-        self.operations['+='] = operator.add
-        self.operations['-='] = operator.sub
-        self.operations['*='] = operator.mul
-        self.operations['/='] = operator.truediv
-        self.operations['.+'] = operator.add
-        self.operations['.-'] = operator.sub
-        self.operations['.*'] = operator.mul
-        
-        self.operations['=='] = operator.eq
-        self.operations['!='] = operator.ne
-        self.operations['<'] = operator.lt
-        self.operations['>'] = operator.gt
-        self.operations['<='] = operator.ge
-        self.operations['>='] = operator.le
-
-        self.operations['NEGATE'] = lambda x: -x
-        self.operations['TRANSPOSE'] = lambda x: x.T
+        self.operators = dict()
+        self.operators['*'] = operator.mul
+        self.operators['/'] = operator.truediv
+        self.operators['+'] = operator.add
+        self.operators['-'] = operator.sub
+        self.operators['.*'] = operator.mul
+        self.operators['./'] = operator.truediv
+        self.operators['.+'] = operator.add
+        self.operators['.-'] = operator.sub
+        self.operators['>'] = operator.gt
+        self.operators['<'] = operator.lt
+        self.operators['>='] = operator.ge
+        self.operators['<='] = operator.le
+        self.operators['=='] = operator.eq
+        self.operators['!='] = operator.ne
+        self.operators['+='] = operator.add
+        self.operators['-='] = operator.sub
+        self.operators['/='] = operator.truediv
+        self.operators['*='] = operator.mul
 
     @on('node')
     def visit(self, node):
         pass
 
-    @when(Program)
+    @when(Instructions)
     def visit(self, node):
         try:
-            node.instructions.accept(self)
+            for instruction in node.instructions:
+                instruction.accept(self)
         except ReturnValueException as e:
             if e.value:
                 print("\nRETURN: ")
                 print(e.value)
 
-    @when(Instructions)
+    @when(If)
     def visit(self, node):
-        for instructon in node.instructions:
-            instructon.accept(self)
+        if node.condition.accept(self):
+            node.instruction.accept(self)
 
-    @when(IntNum)
+    @when(IfElse)
     def visit(self, node):
-        return node.value
-
-    @when(FloatNum)
-    def visit(self, node):
-        return node.value
-
-    @when(Variable)
-    def visit(self, node):
-        return self.memory_stack.get(node.name)
-
-    @when(Reference)
-    def visit(self, node):
-        var = node.variable.accept(self)
-        for index in node.indexes:
-            var = var[index.accept(self)]
-        return var
-
-    @when(BinExpr)
-    def visit(self, node):
-        left = node.left.accept(self)
-        right = node.right.accept(self)
-        return self.operations[node.op](left, right)
-
-    @when(Assignment)
-    def visit(self, node):
-        value = node.right.accept(self)
-        if isinstance(node.left, Reference):
-            var = node.left.variable.accept(self)
-            indexes = list()
-            for index in node.left.indexes:
-               indexes.append(index.accept(self))
-            var[tuple(indexes)] = value
-            
-        elif isinstance(node.left, Variable):
-            self.memory_stack.insert(node.left.name, value)
-
-    @when(AssignmentAndExpr)
-    def visit(self, node):
-        left = node.left.accept(self)
-        right = node.right.accept(self)
-        value = self.operations[node.op](left, right)
-        if isinstance(node.left, Reference):
-            var = node.left.variable.accept(self)
-            indexes = list()
-            for index in node.left.indexes:
-               indexes.append(index.accept(self))
-            var[tuple(indexes)] = value
-        elif isinstance(node.left, Variable):
-            self.memory_stack.set(node.left.name, value)
-
-    @when(Condition)
-    def visit(self, node):
-        left = node.left.accept(self)
-        right = node.right.accept(self)
-        return self.operations[node.op](left, right)
-
-    @when(UnaryExpr)
-    def visit(self, node):
-        arg = node.arg.accept(self)
-        return self.operations[node.op](arg)
+        if node.condition.accept(self):
+            node.if_instruction.accept(self)
+        else:
+            node.else_instruction.accept(self)
 
     @when(For)
     def visit(self, node):
-        self.memory_stack.push(Memory("for"))
+        self.memory_stack.push(Memory("For"))
 
-        range_ = node.range_.accept(self)
-        name = node.variable.name
-        self.memory_stack.insert(name, range_[0])
-        while self.memory_stack.get(name) < range_[1]:
+        left = node.left.accept(self)
+        right = node.right.accept(self)
+
+        if not self.memory_stack.set(node.id.name, left):
+            self.memory_stack.insert(node.id.name, left)
+
+        while self.memory_stack.get(node.id.name) < right:
             try:
                 node.instruction.accept(self)
+
+                self.memory_stack.set(node.id.name, self.memory_stack.get(node.id.name) + 1)  # i+=1
+            except ReturnValueException:
+                return
             except ContinueException:
-                self.memory_stack.set(name, self.memory_stack.get(name) + 1)
+                self.memory_stack.set(node.id.name, self.memory_stack.get(node.id.name) + 1)  # i+=1
                 continue
             except BreakException:
                 break
-            self.memory_stack.set(name, self.memory_stack.get(name) + 1)
 
         self.memory_stack.pop()
 
     @when(While)
     def visit(self, node):
-        self.memory_stack.push(Memory("while"))
-
-        while(node.condition.accept(self)):
+        while node.condition.accept(self):
             try:
+                self.memory_stack.push(Memory("While"))
                 node.instruction.accept(self)
-            except ContinueException:
-                continue
             except BreakException:
                 break
-
-        self.memory_stack.pop()
-
-    @when(Range)
-    def visit(self, node):
-        start = node.start.accept(self)
-        end = node.end.accept(self)
-        return (start, end)
-
-    @when(If)
-    def visit(self, node):
-        cond = node.condition.accept(self)
-        if node.condition.accept(self):
-            node.instruction.accept(self)
-        elif node.else_instruction:
-            node.else_instruction.accept(self)
-
-    @when(Return)
-    def visit(self, node):
-        if node.value:
-            value = node.value.accept(self)
-            raise ReturnValueException(value)
-        else:
-            raise ReturnValueException()
-
-    @when(Print)
-    def visit(self, node):
-        expressions = list()
-        for expr in node.expressions:
-            to_print = expr.accept(self)
-            print(to_print, end=' ')
-        print()
-
-    @when(Continue)
-    def visit(self, node):
-        raise ContinueException()
+            except ContinueException:
+                continue
+            except ReturnValueException:
+                return
+            finally:
+                self.memory_stack.pop()
 
     @when(Break)
     def visit(self, node):
-        raise BreakException()
+        raise BreakException
+
+    @when(Continue)
+    def visit(self, node):
+        raise ContinueException
+
+    @when(Return)
+    def visit(self, node):
+        raise ReturnValueException
+
+    @when(Print)
+    def visit(self, node):
+        print_expressions = node.parameters.accept(self)
+        for expression in print_expressions:
+            print(expression, end="")
+        print()
+
+    @when(AssignDirect)
+    def visit(self, node):
+        pass
+
+    @when(AssignOperation)
+    def visit(self, node):
+        pass
+
+    @when(Condition)
+    def visit(self, node):
+        left = node.left.accept(self)
+        right = node.right.accept(self)
+
+        if node.relation in ('!=', '==') and isinstance(left, np.ndarray) and isinstance(right, np.ndarray):
+            return np.array_equal(left, right)
+
+        return self.operators[node.oper](left, right)
+
+    @when(Expression)
+    def visit(self, node):
+        left = node.left.accept(self)
+        right = node.right.accept(self)
+        if node.op == '*' and isinstance(left, np.ndarray) and isinstance(right, np.ndarray):
+            return np.matmul(left, right)
+        return self.operators[node.op](left, right)
+
+    @when(ExpressionUminus)
+    def visit(self, node):
+        return (-1) * node.expression.accept(self)
+
+    @when(Transpose)
+    def visit(self, node):
+        matrix = node.expression.accept(self)
+        return np.transpose(matrix)
+
+    @when(MatrixRows)
+    def visit(self, node):
+        rows = []
+        for row in node.rows:
+            rows.append(row.accept(self))
+        matrix = np.vstack(rows)
+        return matrix
 
     @when(Vector)
     def visit(self, node):
-        coors = list()
-        for coor in node.coordinates:
-            coors.append(coor.accept(self))
-        return np.array(coors)
+        vector = []
+        for param in node.parameters:
+            vector.append(param.accept(self))
 
-    @when(Eye)
-    def visit(self, node):
-        dim_1 = node.dim_1.accept(self)
-        if node.dim_2:
-            dim_2 = node.dim_2.accept(self)
-        else:
-            dim_2 = dim_1
-        return np.eye(dim_1, dim_2)
+        return np.array(vector)
 
-    @when(Zeros)
-    def visit(self, node):
-        dim_1 = node.dim_1.accept(self)
-        if node.dim_2:
-            dim_2 = node.dim_2.accept(self)
-        else:
-            dim_2 = dim_1
-        return np.zeros((dim_1, dim_2))
+    # eye itp.
+    # @when(MatrixFunction)
+    # def visit(self, node):
+    #     pass
 
-    @when(Ones)
+    @when(MatrixFunction)
     def visit(self, node):
-        dim_1 = node.dim_1.accept(self)
-        if node.dim_2:
-            dim_2 = node.dim_2.accept(self)
-        else:
-            dim_2 = dim_1
-        return np.ones((dim_1, dim_2))
+        pass
+
+    @when(Reference)
+    def visit(self, node):
+        return node.parameters.accept(self)
+
+    @when(Parameters)
+    def visit(self, node):
+        dims = []
+        for param in node.parameters:
+            dims.append(param.accept(self))
+        return dims
 
     @when(String)
     def visit(self, node):
         return node.value[1:-1]
+
+    @when(Number)
+    def visit(self, node):
+        return node.value
+
+    @when(ID)
+    def visit(self, node):
+        return self.memory_stack.get(node.name)
