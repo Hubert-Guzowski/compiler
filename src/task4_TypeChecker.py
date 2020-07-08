@@ -302,19 +302,48 @@ class TypeChecker(NodeVisitor):
         return 'unknown'
 
     def visit_MatrixFunction(self, node):
+        if node.func == 'eye' and len(node.mfe.expressions) > 2:
+            self.handle_error(self.get_error_message_for_matrix_fun(node) +
+                              " eye must be square, we allow only eye(5) or eye(5,5)")
+            return 'unknown'
+
         if len(node.parameters.parameters) == 1:
             param_type = self.visit(node.parameters.parameters[0])
             if param_type != 'int':
-                return 'unknown'
-            return 'matrix'
+                parameters_type = 'unknown'
+            else:
+                parameters_type = 'matrix'
         elif len(node.parameters.parameters) == 2:
             param_type1 = self.visit(node.parameters.parameters[0])
             param_type2 = self.visit(node.parameters.parameters[1])
             if param_type1 != 'int' or param_type2 != 'int':
-                return 'unknown'
-            return 'matrix'
+                parameters_type = 'unknown'
+            else:
+                parameters_type = 'matrix'
         else:
+            parameters_type = 'unknown'
+
+        if parameters_type != 'matrix':
+            self.handle_error(self.get_error_message_for_matrix_fun(node))
             return 'unknown'
+        return 'matrix'
+
+    def get_error_message_for_matrix_fun(self, node):
+        error_msg = 'Line {}: Illegal matrix initialization: {}('.format(node.line, node.func)
+
+        matrix_functions_expressions = node.mfe.expressions
+        if len(matrix_functions_expressions):
+            commas_count = len(matrix_functions_expressions) - 1
+            for i in range(0, len(matrix_functions_expressions)):
+                error_msg += '{}'.format(matrix_functions_expressions[i])
+                if commas_count:
+                    error_msg += ', '
+                    commas_count -= 1
+                else:
+                    error_msg += ' '
+
+        error_msg += ')'
+        return error_msg
 
     def visit_Parameters(self, node):
         for param in node.parameters:

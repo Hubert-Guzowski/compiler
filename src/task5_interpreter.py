@@ -121,11 +121,33 @@ class Interpreter(object):
 
     @when(AssignDirect)
     def visit(self, node):
-        pass
+        if isinstance(node.left, Reference):
+            parameters = node.left.accept(self)
+            value = node.right.accept(self)
+            matrix = self.memory_stack.get(node.ref.id.name)
+
+            if matrix is not None:
+                try:
+                    matrix[parameters[0] - 1, parameters[1] - 1] = value  # -1 because array indexation from 1 to N
+                except IndexError:
+                    print('Line {}: Matrix index is out of bounds: [{},{}].'
+                          .format(node.line, parameters[0], parameters[1]))
+                    exit(-1)
+        elif isinstance(node.left, ID):
+            value = node.right.accept(self)
+            if not self.memory_stack.set(node.left.name, value):
+                self.memory_stack.insert(node.left.name, value)
 
     @when(AssignOperation)
     def visit(self, node):
-        pass
+        left = self.memory_stack.get(node.left.name)
+        right = node.expression.accept(self)
+
+        if node.oper == '*=' and isinstance(left, np.ndarray) and isinstance(right, np.ndarray):
+            result = np.matmul(left, right)
+        else:
+            result = self.operators[node.oper](left, right)
+        self.memory_stack.set(node.id.name, result)
 
     @when(Condition)
     def visit(self, node):
@@ -170,14 +192,19 @@ class Interpreter(object):
 
         return np.array(vector)
 
-    # eye itp.
-    # @when(MatrixFunction)
-    # def visit(self, node):
-    #     pass
-
     @when(MatrixFunction)
     def visit(self, node):
-        pass
+        dims = node.parameters.accept(self)
+        if len(dims) == 1:
+            dims.append(dims[0])
+        dims = tuple(dims)
+
+        if node.func == 'ones':
+            return np.ones(dims)
+        elif node.func == 'zeros':
+            return np.zeros(dims)
+        elif node.func == 'eye':
+            return np.eye(dims[0])
 
     @when(Reference)
     def visit(self, node):
@@ -185,10 +212,10 @@ class Interpreter(object):
 
     @when(Parameters)
     def visit(self, node):
-        dims = []
+        params = []
         for param in node.parameters:
-            dims.append(param.accept(self))
-        return dims
+            params.append(param.accept(self))
+        return params
 
     @when(String)
     def visit(self, node):

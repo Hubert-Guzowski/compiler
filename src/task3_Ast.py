@@ -2,7 +2,13 @@ from __future__ import print_function
 
 
 class Node(object):
-    pass
+
+    def __init__(self):
+        self.line = 0
+        self.column = 0
+
+    def accept(self, visitor):
+        return visitor.visit(self)
 
 
 class Instructions(Node):

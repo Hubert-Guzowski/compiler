@@ -24,7 +24,7 @@ class MemoryStack:
 
     def get(self, name):  # gets from memory stack current value of variable <name>
         for memory in reversed(self.stack):
-            if name in memory:
+            if memory.has_key(name):
                 return memory.get(name)
         raise KeyError(name)
 
@@ -33,10 +33,10 @@ class MemoryStack:
 
     def set(self, name, value):  # sets variable <name> to value <value>
         for memory in reversed(self.stack):
-            if name in memory:
+            if memory.has_key(name):
                 memory.put(name, value)
                 return True
-        raise False
+        return False
 
     def push(self, memory):  # pushes memory <memory> onto the stack
         if not isinstance(memory, Memory):
